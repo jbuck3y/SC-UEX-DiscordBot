@@ -1,0 +1,20 @@
+{
+  "name": "uex-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for Star Citizen UEX Corp trading data",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "deploy": "node deploy-commands.js"
+  },
+  "dependencies": {
+    "@discordjs/rest": "^2.3.0",
+    "discord-api-types": "^0.37.97",
+    "discord.js": "^14.15.2",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
