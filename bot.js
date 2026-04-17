@@ -147,23 +147,28 @@ async function handleRoute(interaction) {
   const routes = await uex.getRoutes({ from, to, scu });
 
   if (!routes || routes.length === 0) {
-    return interaction.editReply({ embeds: [errorEmbed(`No routes found between **${from}** and **${to}**`)] });
+    return interaction.editReply({ embeds: [errorEmbed(`No routes found between **${from}** and **${to}**.\nTry broader location names like a star system (e.g. *Stanton*) or orbit (e.g. *Crusader*).`)] });
   }
 
   const r = routes[0];
-  const profit = r.profit_total ? `${uex.formatPrice(r.profit_total)} aUEC` : "—";
+  // Correct field names per API docs:
+  // origin_terminal_name, destination_terminal_name, profit (not profit_total)
+  const profit = r.profit ? `${uex.formatPrice(r.profit)} aUEC` : "—";
 
   const embed = new EmbedBuilder()
     .setColor(0x2ecc71)
     .setTitle(`🚀 Best Route: ${from} → ${to}`)
-    .setURL("https://uexcorp.space/trade/routes")
+    .setURL(`https://uexcorp.space/trade/route?code=${r.code || ""}`)
     .addFields(
       { name: "Commodity", value: r.commodity_name || "—", inline: true },
-      { name: "Buy At", value: r.terminal_origin_name || from, inline: true },
-      { name: "Sell At", value: r.terminal_destination_name || to, inline: true },
-      { name: "Buy Price", value: r.price_origin ? `${uex.formatPrice(r.price_origin)} aUEC` : "—", inline: true },
-      { name: "Sell Price", value: r.price_destination ? `${uex.formatPrice(r.price_destination)} aUEC` : "—", inline: true },
-      { name: `Profit (${scu} SCU)`, value: profit, inline: true }
+      { name: "Buy At", value: r.origin_terminal_name || from, inline: true },
+      { name: "Sell At", value: r.destination_terminal_name || to, inline: true },
+      { name: "Buy Price/SCU", value: r.price_origin ? `${uex.formatPrice(r.price_origin)} aUEC` : "—", inline: true },
+      { name: "Sell Price/SCU", value: r.price_destination ? `${uex.formatPrice(r.price_destination)} aUEC` : "—", inline: true },
+      { name: `Max Profit`, value: profit, inline: true },
+      { name: "UEX Score", value: r.score ? String(r.score) : "—", inline: true },
+      { name: "Distance", value: r.distance ? `${r.distance} GM` : "—", inline: true },
+      { name: "Margin", value: r.price_margin ? `${r.price_margin}%` : "—", inline: true }
     )
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
     .setTimestamp();
@@ -172,7 +177,7 @@ async function handleRoute(interaction) {
   if (routes.length > 1) {
     const alts = routes
       .slice(1, 4)
-      .map((alt, i) => `**${i + 2}.** ${alt.commodity_name} — ${uex.formatPrice(alt.profit_total || 0)} aUEC`)
+      .map((alt, i) => `**${i + 2}.** ${alt.commodity_name} — ${uex.formatPrice(alt.profit || 0)} aUEC`)
       .join("\n");
     embed.addFields({ name: "Other options", value: alts });
   }
@@ -271,20 +276,19 @@ async function handleTerminal(interaction) {
 
 /** /gameversion – Current Star Citizen patch info */
 async function handleGameVersion(interaction) {
-  const versions = await uex.getGameVersions();
-  if (!versions || versions.length === 0) {
+  // API returns { live: "4.7.1", ptu: "" } — a plain object, not an array
+  const v = await uex.getGameVersions();
+  if (!v || (!v.live && !v.ptu)) {
     return interaction.editReply({ embeds: [errorEmbed("Could not fetch game version data.")] });
   }
 
-  const v = versions[0];
   const embed = new EmbedBuilder()
     .setColor(0x3498db)
     .setTitle("🎮 Current Star Citizen Version")
     .setURL("https://uexcorp.space")
     .addFields(
-      { name: "Version", value: v.version || "—", inline: true },
-      { name: "Live", value: v.is_live ? "✅ Yes" : "❌ No", inline: true },
-      { name: "PTU", value: v.is_ptu ? "✅ Yes" : "❌ No", inline: true }
+      { name: "LIVE", value: v.live || "—", inline: true },
+      { name: "PTU", value: v.ptu || "None", inline: true }
     )
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
     .setTimestamp();

@@ -76,36 +76,54 @@ async function getCommodityRanking() {
 /**
  * Get best trade routes
  * @param {{ from?: string, to?: string, scu?: number }} opts
+ *
+ * NOTE: /commodities_routes REQUIRES at least one of:
+ *   id_terminal_origin | id_planet_origin | id_orbit_origin | id_commodity
+ * Passing only a text name is not supported by the API — we must look up the
+ * terminal/orbit ID first, then call the route endpoint.
+ * As a fallback we accept id_terminal_origin directly if provided.
  */
 async function getRoutes(opts = {}) {
   const params = {};
-  if (opts.scu) params.scu = opts.scu;
+
+  // If numeric IDs were resolved upstream, pass them
+  if (opts.id_terminal_origin)      params.id_terminal_origin      = opts.id_terminal_origin;
+  if (opts.id_terminal_destination) params.id_terminal_destination = opts.id_terminal_destination;
+  if (opts.id_orbit_origin)         params.id_orbit_origin         = opts.id_orbit_origin;
+  if (opts.id_orbit_destination)    params.id_orbit_destination    = opts.id_orbit_destination;
+  if (opts.id_commodity)            params.id_commodity            = opts.id_commodity;
+  // investment = max aUEC to spend (used to scale profit estimate)
+  if (opts.scu) params.investment = opts.scu * 1000; // rough aUEC estimate
 
   const data = await get("/commodities_routes", params);
-  if (!data) return [];
+  if (!data || !Array.isArray(data)) return [];
 
   let routes = data;
 
-  // Filter by from/to location name substring match
+  // Client-side text filter on the name fields returned in the response
+  // Field names per API docs: origin_terminal_name, destination_terminal_name,
+  // origin_star_system_name, destination_star_system_name
   if (opts.from) {
     const q = opts.from.toLowerCase();
     routes = routes.filter(
       (r) =>
-        r.terminal_origin_name?.toLowerCase().includes(q) ||
-        r.star_system_origin_name?.toLowerCase().includes(q)
+        r.origin_terminal_name?.toLowerCase().includes(q) ||
+        r.origin_star_system_name?.toLowerCase().includes(q) ||
+        r.origin_orbit_name?.toLowerCase().includes(q)
     );
   }
   if (opts.to) {
     const q = opts.to.toLowerCase();
     routes = routes.filter(
       (r) =>
-        r.terminal_destination_name?.toLowerCase().includes(q) ||
-        r.star_system_destination_name?.toLowerCase().includes(q)
+        r.destination_terminal_name?.toLowerCase().includes(q) ||
+        r.destination_star_system_name?.toLowerCase().includes(q) ||
+        r.destination_orbit_name?.toLowerCase().includes(q)
     );
   }
 
-  // Sort by profit descending
-  return routes.sort((a, b) => (b.profit_total || 0) - (a.profit_total || 0));
+  // Sort by profit descending — field is "profit", not "profit_total"
+  return routes.sort((a, b) => (b.profit || 0) - (a.profit || 0));
 }
 
 // ─── Vehicles / Ships ─────────────────────────────────────────────────────────
@@ -166,7 +184,10 @@ async function getTerminals(name) {
 // ─── Game Versions ────────────────────────────────────────────────────────────
 
 async function getGameVersions() {
-  return get("/game_versions");
+  // /game_versions returns a plain object: { live: "4.7.1", ptu: "" }
+  // NOT an array — the old code called versions[0] which would be undefined
+  const data = await get("/game_versions");
+  return data; // { live, ptu }
 }
 
 // ─── Star Systems / Locations ─────────────────────────────────────────────────
