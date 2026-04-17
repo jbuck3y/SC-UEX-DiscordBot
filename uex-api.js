@@ -30,7 +30,12 @@ async function get(path, params = {}) {
   }
 
   const json = await res.json();
-  // UEX wraps data in { status: "ok", data: [...] }
+
+  // UEX wraps responses: { status: "ok"|"error", data: [...], error?: string }
+  if (json?.status === "error") {
+    throw new Error(`UEX API returned error: ${json.error || "unknown"} (${url})`);
+  }
+
   return json?.data ?? json;
 }
 
