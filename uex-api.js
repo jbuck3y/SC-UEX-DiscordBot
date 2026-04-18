@@ -105,24 +105,34 @@ async function getCommodityRanking() {
 async function getRoutes(opts = {}) {
   const params = {};
 
-  if (opts.id_terminal_origin)           params.id_terminal_origin      = parseInt(opts.id_terminal_origin);
-  if (opts.id_terminal_destination)      params.id_terminal_destination = parseInt(opts.id_terminal_destination);
-  if (opts.id_orbit_origin)              params.id_orbit_origin         = parseInt(opts.id_orbit_origin);
-  if (opts.id_orbit_destination)         params.id_orbit_destination    = parseInt(opts.id_orbit_destination);
-  if (opts.id_star_system_destination)   params.id_star_system_destination = parseInt(opts.id_star_system_destination);
-  if (opts.id_commodity)                 params.id_commodity            = parseInt(opts.id_commodity);
-  if (opts.investment)                   params.investment              = parseInt(opts.investment);
+  if (opts.id_terminal_origin)      params.id_terminal_origin      = parseInt(opts.id_terminal_origin);
+  if (opts.id_terminal_destination) params.id_terminal_destination = parseInt(opts.id_terminal_destination);
+  if (opts.id_orbit_destination)    params.id_orbit_destination    = parseInt(opts.id_orbit_destination);
+  if (opts.id_planet_destination)   params.id_planet_destination   = parseInt(opts.id_planet_destination);
+  if (opts.id_commodity)            params.id_commodity            = parseInt(opts.id_commodity);
+  if (opts.investment)              params.investment              = parseInt(opts.investment);
 
   const hasRequired = params.id_terminal_origin || params.id_orbit_origin ||
                       params.id_terminal_destination || params.id_commodity;
   if (!hasRequired) {
-    throw new Error("getRoutes requires at least one of: id_terminal_origin, id_orbit_origin, id_commodity");
+    throw new Error("getRoutes requires at least one of: id_terminal_origin, id_terminal_destination, id_commodity");
   }
 
   const data = await get("/commodities_routes", params);
   if (!data || !Array.isArray(data)) return [];
 
-  return data.sort((a, b) => (b.profit || 0) - (a.profit || 0));
+  // Client-side filter by destination system name if provided
+  let routes = data;
+  if (opts.filter_dest_system) {
+    const q = opts.filter_dest_system.toLowerCase();
+    routes = routes.filter(r =>
+      r.destination_star_system_name?.toLowerCase().includes(q) ||
+      r.destination_orbit_name?.toLowerCase().includes(q) ||
+      r.destination_terminal_name?.toLowerCase().includes(q)
+    );
+  }
+
+  return routes.sort((a, b) => (b.profit || 0) - (a.profit || 0));
 }
 
 // ─── Vehicles / Ships ─────────────────────────────────────────────────────────
