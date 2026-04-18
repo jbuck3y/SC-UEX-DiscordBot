@@ -24,16 +24,30 @@ async function get(path, params = {}) {
     headers["Authorization"] = `Bearer ${process.env.UEX_API_TOKEN}`;
   }
 
+  // ── Debug logging ──────────────────────────────────────────
+  console.log(`[UEX] GET ${url.toString()}`);
+
   const res = await fetch(url.toString(), { headers });
+
+  // Log raw response before any processing
+  const rawText = await res.text();
+  console.log(`[UEX] HTTP ${res.status} ${res.statusText}`);
+  console.log(`[UEX] Response: ${rawText.slice(0, 500)}`); // first 500 chars
+
   if (!res.ok) {
-    throw new Error(`UEX API error ${res.status}: ${res.statusText} (${url})`);
+    throw new Error(`UEX API HTTP ${res.status}: ${res.statusText}\nURL: ${url}\nBody: ${rawText.slice(0, 300)}`);
   }
 
-  const json = await res.json();
+  let json;
+  try {
+    json = JSON.parse(rawText);
+  } catch (e) {
+    throw new Error(`UEX API returned non-JSON response: ${rawText.slice(0, 300)}`);
+  }
 
-  // UEX wraps responses: { status: "ok"|"error", data: [...], error?: string }
-  if (json?.status === "error") {
-    throw new Error(`UEX API returned error: ${json.error || "unknown"} (${url})`);
+  // UEX wraps responses: { status: "ok"|"error", data: [...] }
+  if (json?.status && json.status !== "ok") {
+    throw new Error(`UEX API error status "${json.status}": ${JSON.stringify(json).slice(0, 300)}\nURL: ${url}`);
   }
 
   return json?.data ?? json;
@@ -154,11 +168,10 @@ async function getFuelPricesAll(location) {
 
 // ─── Terminals ────────────────────────────────────────────────────────────────
 
-/** Get terminals, optionally filtered by name using the API's native name param */
-async function getTerminals(name, type = null) {
+/** Get terminals filtered by name using the API's native name param */
+async function getTerminals(name) {
   const params = {};
   if (name) params.name = name;
-  if (type) params.type = type;
   const data = await get("/terminals", params);
   if (!Array.isArray(data)) return [];
   return data;

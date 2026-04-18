@@ -141,46 +141,57 @@ async function handleRoute(interaction) {
   const to = interaction.options.getString("to");
   const scu = interaction.options.getInteger("scu") || 100;
 
-  // Step 1: Resolve origin terminal name → numeric ID using API's native name filter
-  let id_terminal_origin = null;
-  let id_terminal_destination = null;
+  // Pick best terminal from a list — prefer available commodity terminals
+  const pickBest = (list) => {
+    if (!list || list.length === 0) return null;
+    return (
+      list.find(t => t.type === "commodity" && t.is_available === 1) ||
+      list.find(t => t.type === "commodity") ||
+      list.find(t => t.is_available === 1) ||
+      list[0]
+    );
+  };
 
-  const originTerminals = await uex.getTerminals(from, "commodity");
-  if (!originTerminals || originTerminals.length === 0) {
+  // Step 1: Resolve origin
+  const originTerminals = await uex.getTerminals(from);
+  console.log(`[ROUTE] "${from}" → ${originTerminals?.length ?? 0} results`);
+  originTerminals?.forEach(t => console.log(`  id=${t.id} name="${t.name}" type="${t.type}" available=${t.is_available}`));
+
+  const originTerminal = pickBest(originTerminals);
+  if (!originTerminal) {
     return interaction.editReply({
       embeds: [errorEmbed(
-        `No commodity terminal found matching **${from}**.\n` +
-        `Use an exact terminal name like *Baijini Point*, *Port Tressler*, or *TDD New Babbage*.\n` +
-        `Try \`/terminal ${from}\` to search first.`
+        `No terminal found matching **${from}**.\n` +
+        `Try an exact name like *Baijini Point*, *Port Tressler*, or *TDD New Babbage*.`
       )],
     });
   }
-  id_terminal_origin = originTerminals[0].id;
+  console.log(`[ROUTE] Using origin: id=${originTerminal.id} "${originTerminal.name}" type=${originTerminal.type}`);
 
-  // Step 2: Optionally resolve destination
+  // Step 2: Resolve destination (optional)
+  let destTerminal = null;
   if (to) {
-    const destTerminals = await uex.getTerminals(to, "commodity");
-    if (destTerminals && destTerminals.length > 0) {
-      id_terminal_destination = destTerminals[0].id;
-    }
-    // If destination terminal not found, continue anyway — API will return all routes from origin
+    const destTerminals = await uex.getTerminals(to);
+    console.log(`[ROUTE] "${to}" → ${destTerminals?.length ?? 0} results`);
+    destTerminal = pickBest(destTerminals);
+    if (destTerminal) console.log(`[ROUTE] Using dest: id=${destTerminal.id} "${destTerminal.name}"`);
   }
 
-  // Step 3: Fetch routes with confirmed integer IDs
-  const routeOpts = {
-    id_terminal_origin,
-    investment: scu * 1000, // aUEC budget estimate
-  };
-  if (id_terminal_destination) routeOpts.id_terminal_destination = id_terminal_destination;
+  // Step 3: Fetch routes — only pass integer IDs
+  const routeOpts = { id_terminal_origin: originTerminal.id };
+  if (destTerminal) routeOpts.id_terminal_destination = destTerminal.id;
+  if (scu) routeOpts.investment = scu * 1000;
 
+  console.log(`[ROUTE] getRoutes opts:`, JSON.stringify(routeOpts));
   const routes = await uex.getRoutes(routeOpts);
+  console.log(`[ROUTE] Got ${routes?.length ?? 0} routes`);
 
   if (!routes || routes.length === 0) {
     return interaction.editReply({
       embeds: [errorEmbed(
-        `No routes found from **${originTerminals[0].name}**` +
-        `${id_terminal_destination ? ` to **${to}**` : ""}.\n` +
-        `This terminal may not have active commodity data yet.`
+        `No routes found from **${originTerminal.name}**` +
+        `${destTerminal ? ` to **${destTerminal.name}**` : ""}.\n` +
+        `Try a major station like *Baijini Point* or *Port Tressler*.`
       )],
     });
   }
@@ -191,11 +202,11 @@ async function handleRoute(interaction) {
 
   const embed = new EmbedBuilder()
     .setColor(0x2ecc71)
-    .setTitle(`🚀 Best Route from ${originTerminals[0].name}`)
+    .setTitle(`🚀 Best Route from ${originTerminal.name}`)
     .setURL(`https://uexcorp.space/trade/route?code=${r.code || ""}`)
     .addFields(
       { name: "Commodity", value: r.commodity_name || "—", inline: true },
-      { name: "Buy At", value: r.origin_terminal_name || from, inline: true },
+      { name: "Buy At", value: r.origin_terminal_name || originTerminal.name, inline: true },
       { name: "Sell At", value: r.destination_terminal_name || "—", inline: true },
       { name: "Buy Price/SCU", value: r.price_origin ? `${uex.formatPrice(r.price_origin)} aUEC` : "—", inline: true },
       { name: "Sell Price/SCU", value: r.price_destination ? `${uex.formatPrice(r.price_destination)} aUEC` : "—", inline: true },
@@ -207,7 +218,6 @@ async function handleRoute(interaction) {
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
     .setTimestamp();
 
-  // Show up to 3 alternatives
   if (routes.length > 1) {
     const alts = routes
       .slice(1, 4)
