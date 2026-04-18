@@ -171,17 +171,39 @@ async function handleRoute(interaction) {
   console.log(`[ROUTE] Using origin: id=${originTerminal.id} "${originTerminal.name}" type=${originTerminal.type}`);
 
   // Step 2: Resolve destination (optional)
+  // If destination matches many terminals it's probably a system/orbit name — use star system ID instead
   let destTerminal = null;
+  let id_star_system_destination = null;
+
   if (to) {
     const destTerminals = await uex.getTerminals(to);
-    console.log(`[ROUTE] "${to}" → ${destTerminals?.length ?? 0} results`);
-    destTerminal = pickBest(destTerminals);
-    if (destTerminal) console.log(`[ROUTE] Using dest: id=${destTerminal.id} "${destTerminal.name}"`);
+    const nonAdminDest = destTerminals?.filter(t => !t.name.startsWith("Admin -")) || [];
+    console.log(`[ROUTE] "${to}" → ${destTerminals?.length ?? 0} results, ${nonAdminDest.length} non-admin`);
+
+    // If only 1-3 non-admin commodity terminals match, treat as a specific terminal
+    const destCommodityTerminals = nonAdminDest.filter(t => t.type === "commodity");
+    if (destCommodityTerminals.length > 0 && destCommodityTerminals.length <= 3) {
+      destTerminal = destCommodityTerminals[0];
+      console.log(`[ROUTE] Using dest terminal: id=${destTerminal.id} "${destTerminal.name}"`);
+    } else {
+      // Too many matches — try to resolve as a star system instead
+      const systems = await uex.getStarSystems(to);
+      console.log(`[ROUTE] Star system search "${to}" → ${systems?.length ?? 0} results`);
+      if (systems && systems.length > 0) {
+        id_star_system_destination = systems[0].id;
+        console.log(`[ROUTE] Using star system dest: id=${id_star_system_destination} "${systems[0].name}"`);
+      } else if (nonAdminDest.length > 0) {
+        // Fall back to best non-admin terminal
+        destTerminal = pickBest(nonAdminDest);
+        console.log(`[ROUTE] Falling back to terminal: id=${destTerminal?.id} "${destTerminal?.name}"`);
+      }
+    }
   }
 
-  // Step 3: Fetch routes — only pass integer IDs
+  // Step 3: Fetch routes
   const routeOpts = { id_terminal_origin: originTerminal.id };
   if (destTerminal) routeOpts.id_terminal_destination = destTerminal.id;
+  if (id_star_system_destination) routeOpts.id_star_system_destination = id_star_system_destination;
   if (scu) routeOpts.investment = scu * 1000;
 
   console.log(`[ROUTE] getRoutes opts:`, JSON.stringify(routeOpts));

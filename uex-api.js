@@ -105,15 +105,14 @@ async function getCommodityRanking() {
 async function getRoutes(opts = {}) {
   const params = {};
 
-  // All ID params must be integers — skip if falsy or non-numeric
-  if (opts.id_terminal_origin)      params.id_terminal_origin      = parseInt(opts.id_terminal_origin);
-  if (opts.id_terminal_destination) params.id_terminal_destination = parseInt(opts.id_terminal_destination);
-  if (opts.id_orbit_origin)         params.id_orbit_origin         = parseInt(opts.id_orbit_origin);
-  if (opts.id_orbit_destination)    params.id_orbit_destination    = parseInt(opts.id_orbit_destination);
-  if (opts.id_commodity)            params.id_commodity            = parseInt(opts.id_commodity);
-  if (opts.investment)              params.investment              = parseInt(opts.investment);
+  if (opts.id_terminal_origin)           params.id_terminal_origin      = parseInt(opts.id_terminal_origin);
+  if (opts.id_terminal_destination)      params.id_terminal_destination = parseInt(opts.id_terminal_destination);
+  if (opts.id_orbit_origin)              params.id_orbit_origin         = parseInt(opts.id_orbit_origin);
+  if (opts.id_orbit_destination)         params.id_orbit_destination    = parseInt(opts.id_orbit_destination);
+  if (opts.id_star_system_destination)   params.id_star_system_destination = parseInt(opts.id_star_system_destination);
+  if (opts.id_commodity)                 params.id_commodity            = parseInt(opts.id_commodity);
+  if (opts.investment)                   params.investment              = parseInt(opts.investment);
 
-  // Validate we have at least one required param before hitting the API
   const hasRequired = params.id_terminal_origin || params.id_orbit_origin ||
                       params.id_terminal_destination || params.id_commodity;
   if (!hasRequired) {
@@ -188,8 +187,11 @@ async function getGameVersions() {
 
 // ─── Star Systems / Locations ─────────────────────────────────────────────────
 
-async function getStarSystems() {
-  return get("/star_systems");
+async function getStarSystems(name) {
+  const data = await get("/star_systems");
+  if (!name) return data;
+  const q = name.toLowerCase();
+  return data.filter(s => s.name?.toLowerCase().includes(q));
 }
 
 async function getPlanets(starSystemId) {
