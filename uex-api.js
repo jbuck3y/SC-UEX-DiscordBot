@@ -91,44 +91,25 @@ async function getCommodityRanking() {
 async function getRoutes(opts = {}) {
   const params = {};
 
-  // If numeric IDs were resolved upstream, pass them
-  if (opts.id_terminal_origin)      params.id_terminal_origin      = opts.id_terminal_origin;
-  if (opts.id_terminal_destination) params.id_terminal_destination = opts.id_terminal_destination;
-  if (opts.id_orbit_origin)         params.id_orbit_origin         = opts.id_orbit_origin;
-  if (opts.id_orbit_destination)    params.id_orbit_destination    = opts.id_orbit_destination;
-  if (opts.id_commodity)            params.id_commodity            = opts.id_commodity;
-  // investment = max aUEC to spend (used to scale profit estimate)
-  if (opts.scu) params.investment = opts.scu * 1000; // rough aUEC estimate
+  // All ID params must be integers — skip if falsy or non-numeric
+  if (opts.id_terminal_origin)      params.id_terminal_origin      = parseInt(opts.id_terminal_origin);
+  if (opts.id_terminal_destination) params.id_terminal_destination = parseInt(opts.id_terminal_destination);
+  if (opts.id_orbit_origin)         params.id_orbit_origin         = parseInt(opts.id_orbit_origin);
+  if (opts.id_orbit_destination)    params.id_orbit_destination    = parseInt(opts.id_orbit_destination);
+  if (opts.id_commodity)            params.id_commodity            = parseInt(opts.id_commodity);
+  if (opts.investment)              params.investment              = parseInt(opts.investment);
+
+  // Validate we have at least one required param before hitting the API
+  const hasRequired = params.id_terminal_origin || params.id_orbit_origin ||
+                      params.id_terminal_destination || params.id_commodity;
+  if (!hasRequired) {
+    throw new Error("getRoutes requires at least one of: id_terminal_origin, id_orbit_origin, id_commodity");
+  }
 
   const data = await get("/commodities_routes", params);
   if (!data || !Array.isArray(data)) return [];
 
-  let routes = data;
-
-  // Client-side text filter on the name fields returned in the response
-  // Field names per API docs: origin_terminal_name, destination_terminal_name,
-  // origin_star_system_name, destination_star_system_name
-  if (opts.from) {
-    const q = opts.from.toLowerCase();
-    routes = routes.filter(
-      (r) =>
-        r.origin_terminal_name?.toLowerCase().includes(q) ||
-        r.origin_star_system_name?.toLowerCase().includes(q) ||
-        r.origin_orbit_name?.toLowerCase().includes(q)
-    );
-  }
-  if (opts.to) {
-    const q = opts.to.toLowerCase();
-    routes = routes.filter(
-      (r) =>
-        r.destination_terminal_name?.toLowerCase().includes(q) ||
-        r.destination_star_system_name?.toLowerCase().includes(q) ||
-        r.destination_orbit_name?.toLowerCase().includes(q)
-    );
-  }
-
-  // Sort by profit descending — field is "profit", not "profit_total"
-  return routes.sort((a, b) => (b.profit || 0) - (a.profit || 0));
+  return data.sort((a, b) => (b.profit || 0) - (a.profit || 0));
 }
 
 // ─── Vehicles / Ships ─────────────────────────────────────────────────────────
@@ -173,17 +154,14 @@ async function getFuelPricesAll(location) {
 
 // ─── Terminals ────────────────────────────────────────────────────────────────
 
-/** Get terminals, optionally filtered by name */
-async function getTerminals(name) {
-  const data = await get("/terminals");
-  if (!name) return data;
-  const q = name.toLowerCase();
-  return data.filter(
-    (t) =>
-      t.name?.toLowerCase().includes(q) ||
-      t.orbit_name?.toLowerCase().includes(q) ||
-      t.star_system_name?.toLowerCase().includes(q)
-  );
+/** Get terminals, optionally filtered by name using the API's native name param */
+async function getTerminals(name, type = null) {
+  const params = {};
+  if (name) params.name = name;
+  if (type) params.type = type;
+  const data = await get("/terminals", params);
+  if (!Array.isArray(data)) return [];
+  return data;
 }
 
 // ─── Game Versions ────────────────────────────────────────────────────────────

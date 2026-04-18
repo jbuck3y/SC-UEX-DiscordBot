@@ -141,65 +141,81 @@ async function handleRoute(interaction) {
   const to = interaction.options.getString("to");
   const scu = interaction.options.getInteger("scu") || 100;
 
-  // Step 1: resolve origin text → terminal or orbit ID (required by the API)
-  let id_terminal_origin, id_terminal_destination;
+  // Step 1: Resolve origin terminal name → numeric ID using API's native name filter
+  let id_terminal_origin = null;
+  let id_terminal_destination = null;
 
-  try {
-    const terminals = await uex.getTerminals(from);
-    if (terminals && terminals.length > 0) {
-      id_terminal_origin = terminals[0].id;
-    }
-  } catch (_) {}
-
-  if (!id_terminal_origin) {
+  const originTerminals = await uex.getTerminals(from, "commodity");
+  if (!originTerminals || originTerminals.length === 0) {
     return interaction.editReply({
-      embeds: [errorEmbed(`Could not find a terminal matching **${from}**.\nTry an exact terminal name like *Baijini Point* or *Port Tressler*.`)],
+      embeds: [errorEmbed(
+        `No commodity terminal found matching **${from}**.\n` +
+        `Use an exact terminal name like *Baijini Point*, *Port Tressler*, or *TDD New Babbage*.\n` +
+        `Try \`/terminal ${from}\` to search first.`
+      )],
+    });
+  }
+  id_terminal_origin = originTerminals[0].id;
+
+  // Step 2: Optionally resolve destination
+  if (to) {
+    const destTerminals = await uex.getTerminals(to, "commodity");
+    if (destTerminals && destTerminals.length > 0) {
+      id_terminal_destination = destTerminals[0].id;
+    }
+    // If destination terminal not found, continue anyway — API will return all routes from origin
+  }
+
+  // Step 3: Fetch routes with confirmed integer IDs
+  const routeOpts = {
+    id_terminal_origin,
+    investment: scu * 1000, // aUEC budget estimate
+  };
+  if (id_terminal_destination) routeOpts.id_terminal_destination = id_terminal_destination;
+
+  const routes = await uex.getRoutes(routeOpts);
+
+  if (!routes || routes.length === 0) {
+    return interaction.editReply({
+      embeds: [errorEmbed(
+        `No routes found from **${originTerminals[0].name}**` +
+        `${id_terminal_destination ? ` to **${to}**` : ""}.\n` +
+        `This terminal may not have active commodity data yet.`
+      )],
     });
   }
 
-  // Step 2: optionally resolve destination
-  if (to) {
-    try {
-      const destTerminals = await uex.getTerminals(to);
-      if (destTerminals && destTerminals.length > 0) {
-        id_terminal_destination = destTerminals[0].id;
-      }
-    } catch (_) {}
-  }
-
-  const routes = await uex.getRoutes({ id_terminal_origin, id_terminal_destination, scu });
-
-  if (!routes || routes.length === 0) {
-    return interaction.editReply({ embeds: [errorEmbed(`No routes found from **${from}**${to ? ` to **${to}**` : ""}.\nTry a different terminal name.`)] });
-  }
-
   const r = routes[0];
-  const profit = r.profit ? `${uex.formatPrice(r.profit)} aUEC` : "—";
+  const profit = r.profit ? `${uex.formatPrice(Math.round(r.profit))} aUEC` : "—";
+  const investment = r.investment ? `${uex.formatPrice(Math.round(r.investment))} aUEC` : "—";
 
   const embed = new EmbedBuilder()
     .setColor(0x2ecc71)
-    .setTitle(`🚀 Best Route: ${from} → ${to || "anywhere"}`)
+    .setTitle(`🚀 Best Route from ${originTerminals[0].name}`)
     .setURL(`https://uexcorp.space/trade/route?code=${r.code || ""}`)
     .addFields(
       { name: "Commodity", value: r.commodity_name || "—", inline: true },
       { name: "Buy At", value: r.origin_terminal_name || from, inline: true },
-      { name: "Sell At", value: r.destination_terminal_name || to || "—", inline: true },
+      { name: "Sell At", value: r.destination_terminal_name || "—", inline: true },
       { name: "Buy Price/SCU", value: r.price_origin ? `${uex.formatPrice(r.price_origin)} aUEC` : "—", inline: true },
       { name: "Sell Price/SCU", value: r.price_destination ? `${uex.formatPrice(r.price_destination)} aUEC` : "—", inline: true },
+      { name: "Margin", value: r.price_margin ? `${r.price_margin}%` : "—", inline: true },
       { name: "Max Profit", value: profit, inline: true },
-      { name: "UEX Score", value: r.score ? String(r.score) : "—", inline: true },
-      { name: "Distance", value: r.distance ? `${r.distance} GM` : "—", inline: true },
-      { name: "Margin", value: r.price_margin ? `${r.price_margin}%` : "—", inline: true }
+      { name: "Investment", value: investment, inline: true },
+      { name: "UEX Score", value: r.score ? String(r.score) : "—", inline: true }
     )
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
     .setTimestamp();
 
+  // Show up to 3 alternatives
   if (routes.length > 1) {
     const alts = routes
       .slice(1, 4)
-      .map((alt, i) => `**${i + 2}.** ${alt.commodity_name} — ${uex.formatPrice(alt.profit || 0)} aUEC`)
+      .map((alt, i) =>
+        `**${i + 2}.** ${alt.commodity_name} → ${alt.destination_terminal_name || "?"} — **${uex.formatPrice(Math.round(alt.profit || 0))} aUEC**`
+      )
       .join("\n");
-    embed.addFields({ name: "Other options", value: alts });
+    embed.addFields({ name: "Other Top Routes", value: alts });
   }
 
   await interaction.editReply({ embeds: [embed] });
