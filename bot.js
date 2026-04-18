@@ -141,14 +141,16 @@ async function handleRoute(interaction) {
   const to = interaction.options.getString("to");
   const scu = interaction.options.getInteger("scu") || 100;
 
-  // Pick best terminal from a list — prefer available commodity terminals
+  // Pick best terminal — exclude Admin terminals, prefer commodity type
   const pickBest = (list) => {
     if (!list || list.length === 0) return null;
+    const nonAdmin = list.filter(t => !t.name.startsWith("Admin -"));
+    const pool = nonAdmin.length > 0 ? nonAdmin : list; // fall back to all if only admins exist
     return (
-      list.find(t => t.type === "commodity" && t.is_available === 1) ||
-      list.find(t => t.type === "commodity") ||
-      list.find(t => t.is_available === 1) ||
-      list[0]
+      pool.find(t => t.type === "commodity" && t.is_available === 1) ||
+      pool.find(t => t.type === "commodity") ||
+      pool.find(t => t.is_available === 1) ||
+      pool[0]
     );
   };
 
