@@ -25,12 +25,20 @@ function loadTimers() {
   try { return JSON.parse(fs.readFileSync(TIMERS_FILE, "utf8")); } catch { return {}; }
 }
 function saveTimers(timers) {
-  fs.writeFileSync(TIMERS_FILE, JSON.stringify(timers, null, 2));
+  try { fs.writeFileSync(TIMERS_FILE, JSON.stringify(timers, null, 2)); }
+  catch (err) { console.error("⚠️  Could not save hangar timers:", err.message); }
 }
 
 const hangarTimers = loadTimers(); // { userId: { location, expiresAt } }
 
-// ─── Auto-deploy slash commands ───────────────────────────────────────────────
+// ─── Auto-deploy slash commands (skips if commands haven't changed) ───────────
+
+const CMD_HASH_FILE = path.join(__dirname, ".cmd-hash");
+
+function commandsHash() {
+  const { createHash } = require("crypto");
+  return createHash("md5").update(JSON.stringify(commands)).digest("hex");
+}
 
 async function deployCommands() {
   const { DISCORD_TOKEN, CLIENT_ID, GUILD_ID } = process.env;
@@ -38,18 +46,35 @@ async function deployCommands() {
     console.warn("⚠️  Skipping command deploy — DISCORD_TOKEN or CLIENT_ID missing.");
     return;
   }
+
+  // Skip if commands haven't changed since last successful deploy
+  const currentHash = commandsHash();
+  try {
+    const savedHash = fs.readFileSync(CMD_HASH_FILE, "utf8").trim();
+    if (savedHash === currentHash) {
+      console.log("📡  Commands unchanged — skipping deploy.");
+      return;
+    }
+  } catch { /* no hash file yet, deploy */ }
+
   try {
     const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
     const route = GUILD_ID
       ? Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
       : Routes.applicationCommands(CLIENT_ID);
     await rest.put(route, { body: commands });
+    fs.writeFileSync(CMD_HASH_FILE, currentHash);
     const scope = GUILD_ID ? `guild ${GUILD_ID}` : "global";
     console.log(`📡  Slash commands registered (${scope})`);
   } catch (err) {
     console.error("❌  Failed to register commands:", err.message);
   }
 }
+
+// ─── Global error guards (prevent silent crashes) ─────────────────────────────
+
+process.on("unhandledRejection", (err) => console.error("Unhandled rejection:", err));
+process.on("uncaughtException",  (err) => console.error("Uncaught exception:", err));
 
 // ─── Client Setup ────────────────────────────────────────────────────────────
 
