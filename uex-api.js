@@ -106,6 +106,7 @@ async function getRoutes(opts = {}) {
   const params = {};
 
   if (opts.id_terminal_origin)      params.id_terminal_origin      = parseInt(opts.id_terminal_origin);
+  if (opts.id_orbit_origin)         params.id_orbit_origin         = parseInt(opts.id_orbit_origin);
   if (opts.id_terminal_destination) params.id_terminal_destination = parseInt(opts.id_terminal_destination);
   if (opts.id_orbit_destination)    params.id_orbit_destination    = parseInt(opts.id_orbit_destination);
   if (opts.id_planet_destination)   params.id_planet_destination   = parseInt(opts.id_planet_destination);

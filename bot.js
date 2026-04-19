@@ -83,7 +83,7 @@ async function handleCommodity(interaction) {
     .setColor(0x00d4ff)
     .setTitle(`📦 ${c.name}`)
     .setURL(`https://uexcorp.space/commodities/info/name/${encodeURIComponent(c.name_short || c.name)}`)
-    .setDescription(c.wiki || "No description available.")
+    .setDescription(c.wiki ? `[View on Star Citizen Wiki](${c.wiki})` : "No description available.")
     .addFields(
       { name: "Code", value: c.code || "—", inline: true },
       { name: "Kind", value: c.kind || "—", inline: true },
@@ -264,14 +264,11 @@ async function handleShip(interaction) {
     .setURL(`https://uexcorp.space/vehicles/info/name/${encodeURIComponent(v.name_short || v.name)}`)
     .addFields(
       { name: "Manufacturer", value: v.company_name || "—", inline: true },
-      { name: "Role", value: v.role || "—", inline: true },
-      { name: "Career", value: v.career || "—", inline: true },
-      { name: "Size", value: v.size || "—", inline: true },
-      { name: "Crew", value: v.crew ? `${v.crew_min || 1}–${v.crew}` : "—", inline: true },
-      { name: "Cargo (SCU)", value: v.scu ? String(v.scu) : "—", inline: true },
-      { name: "Mass (kg)", value: v.mass ? uex.formatPrice(v.mass) : "—", inline: true },
-      { name: "HP", value: v.hp ? String(v.hp) : "—", inline: true },
-      { name: "Pledge Price", value: v.price_pledge ? `$${v.price_pledge}` : "—", inline: true }
+      { name: "Crew", value: v.crew ? String(v.crew) : "—", inline: true },
+      { name: "Cargo (SCU)", value: v.scu != null ? String(v.scu) : "—", inline: true },
+      { name: "Mass (kg)", value: v.mass != null ? uex.formatPrice(v.mass) : "—", inline: true },
+      { name: "Landing Pad", value: v.pad_type || "—", inline: true },
+      { name: "Version Added", value: v.game_version || "—", inline: true }
     )
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
     .setTimestamp();
@@ -290,14 +287,25 @@ async function handleFuel(interaction) {
     return interaction.editReply({ embeds: [errorEmbed(location ? `No fuel prices found for **${location}**` : "No fuel price data available.")] });
   }
 
-  const top = prices.slice(0, 8);
+  // API returns one entry per fuel type per terminal — group by terminal
+  const byTerminal = {};
+  for (const f of prices) {
+    if (!byTerminal[f.terminal_name]) byTerminal[f.terminal_name] = {};
+    const name = (f.commodity_name || "").toLowerCase();
+    if (name.includes("hydrogen")) byTerminal[f.terminal_name].hydrogen = f.price_buy;
+    if (name.includes("quantum"))  byTerminal[f.terminal_name].quantum  = f.price_buy;
+  }
+
+  const terminals = Object.entries(byTerminal).slice(0, 8);
   const embed = new EmbedBuilder()
     .setColor(0xe74c3c)
     .setTitle(`⛽ Fuel Prices${location ? ` near ${location}` : ""}`)
     .setURL("https://uexcorp.space/commodities/fuel_prices")
     .setDescription(
-      top
-        .map((f) => `**${f.terminal_name}** (${f.orbit_name || f.star_system_name})\nHydrogen: **${f.price_hydrogen || "—"}** | Quantanium: **${f.price_quantanium || "—"}**`)
+      terminals
+        .map(([name, f]) =>
+          `**${name}**\nHydrogen: **${f.hydrogen != null ? uex.formatPrice(f.hydrogen) : "—"}** | Quantum: **${f.quantum != null ? uex.formatPrice(f.quantum) : "—"}**`
+        )
         .join("\n\n")
     )
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
@@ -327,9 +335,12 @@ async function handleTerminal(interaction) {
       { name: "Space Station", value: t.space_station_name || "—", inline: true },
       { name: "City", value: t.city_name || "—", inline: true },
       { name: "Faction", value: t.faction_name || "—", inline: true },
-      { name: "Commodities", value: t.is_commodity ? "✅" : "❌", inline: true },
-      { name: "Items", value: t.is_item ? "✅" : "❌", inline: true },
-      { name: "Vehicles", value: t.is_vehicle ? "✅" : "❌", inline: true }
+      { name: "Refuel", value: t.is_refuel ? "✅" : "❌", inline: true },
+      { name: "Cargo", value: t.is_cargo_center ? "✅" : "❌", inline: true },
+      { name: "Refinery", value: t.is_refinery ? "✅" : "❌", inline: true },
+      { name: "FPS Shop", value: t.is_shop_fps ? "✅" : "❌", inline: true },
+      { name: "Vehicles", value: t.is_shop_vehicle ? "✅" : "❌", inline: true },
+      { name: "Medical", value: t.is_medical ? "✅" : "❌", inline: true }
     )
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
     .setTimestamp();
