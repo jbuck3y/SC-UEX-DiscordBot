@@ -1,5 +1,5 @@
 {
-  "name": "uex-discord-bot",
+  "name": "sc-trader-bot",
   "version": "1.0.0",
   "description": "Discord bot for Star Citizen UEX Corp trading data",
   "main": "bot.js",

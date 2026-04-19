@@ -1,5 +1,5 @@
 /**
- * UEX Corp Discord Bot
+ * SC Trader Bot
  * Star Citizen trading data via the UEX API 2.0
  * https://uexcorp.space/api/documentation
  *
@@ -547,7 +547,7 @@ async function handleLoopRoutes(interaction) {
 async function handleHelp(interaction) {
   const embed = new EmbedBuilder()
     .setColor(0x00d4ff)
-    .setTitle("🛸 UEX Discord Bot — Commands")
+    .setTitle("🛸 SC Trader Bot — Commands")
     .setURL("https://uexcorp.space/api/documentation")
     .setDescription("Star Citizen trading data powered by the [UEX Corp API](https://uexcorp.space).")
     .addFields(
