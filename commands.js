@@ -75,7 +75,27 @@ const commands = [
     .setName("gameversion")
     .setDescription("Show the current Star Citizen LIVE and PTU patch versions"),
 
-  new SlashCommandBuilder().setName("help").setDescription("List all UEX bot commands"),
+  new SlashCommandBuilder().setName("help").setDescription("List all SC Trader Bot commands"),
+
+  new SlashCommandBuilder()
+    .setName("hangar")
+    .setDescription("Track your executive hangar rental timer")
+    .addSubcommand((sub) =>
+      sub.setName("set")
+        .setDescription("Start a new hangar rental timer")
+        .addIntegerOption((o) =>
+          o.setName("minutes").setDescription("Rental duration in minutes (default: 30)").setRequired(false).setMinValue(1).setMaxValue(1440)
+        )
+        .addStringOption((o) =>
+          o.setName("location").setDescription("Station name for reference (e.g. Baijini Point)").setRequired(false)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub.setName("check").setDescription("Check your current hangar timer")
+    )
+    .addSubcommand((sub) =>
+      sub.setName("clear").setDescription("Clear your hangar timer")
+    ),
 
   new SlashCommandBuilder()
     .setName("pirate")

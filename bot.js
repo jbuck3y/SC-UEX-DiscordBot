@@ -12,8 +12,23 @@
 
 require("dotenv").config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActivityType, REST, Routes } = require("discord.js");
-const uex = require("./uex-api");
+const fs   = require("fs");
+const path = require("path");
+const uex  = require("./uex-api");
 const commands = require("./commands");
+
+// ─── Hangar timer persistence ─────────────────────────────────────────────────
+
+const TIMERS_FILE = path.join(__dirname, "hangar-timers.json");
+
+function loadTimers() {
+  try { return JSON.parse(fs.readFileSync(TIMERS_FILE, "utf8")); } catch { return {}; }
+}
+function saveTimers(timers) {
+  fs.writeFileSync(TIMERS_FILE, JSON.stringify(timers, null, 2));
+}
+
+const hangarTimers = loadTimers(); // { userId: { location, expiresAt } }
 
 // ─── Auto-deploy slash commands ───────────────────────────────────────────────
 
@@ -84,6 +99,9 @@ client.on("interactionCreate", async (interaction) => {
         break;
       case "looproutes":
         await handleLoopRoutes(interaction);
+        break;
+      case "hangar":
+        await handleHangar(interaction);
         break;
       default:
         await interaction.editReply("❓ Unknown command.");
@@ -543,6 +561,75 @@ async function handleLoopRoutes(interaction) {
   await interaction.editReply({ embeds: [embed] });
 }
 
+/** /hangar – Executive hangar rental timer tracker */
+async function handleHangar(interaction) {
+  const sub      = interaction.options.getSubcommand();
+  const userId   = interaction.user.id;
+  const username = interaction.user.displayName || interaction.user.username;
+
+  if (sub === "set") {
+    const minutes  = interaction.options.getInteger("minutes") || 30;
+    const location = interaction.options.getString("location") || "Unknown Station";
+    const expiresAt = Date.now() + minutes * 60 * 1000;
+
+    hangarTimers[userId] = { location, expiresAt };
+    saveTimers(hangarTimers);
+
+    const expiryEpoch = Math.floor(expiresAt / 1000);
+    const embed = new EmbedBuilder()
+      .setColor(0xf5a623)
+      .setTitle("🏛️ Executive Hangar Timer Set")
+      .addFields(
+        { name: "Location", value: location, inline: true },
+        { name: "Duration", value: `${minutes} min`, inline: true },
+        { name: "Expires", value: `<t:${expiryEpoch}:f>`, inline: true },
+        { name: "Time Remaining", value: `<t:${expiryEpoch}:R>`, inline: false }
+      )
+      .setFooter({ text: "Use /hangar check to see remaining time • /hangar clear to remove" })
+      .setTimestamp();
+
+    return interaction.editReply({ embeds: [embed] });
+  }
+
+  if (sub === "check") {
+    const timer = hangarTimers[userId];
+    if (!timer) {
+      return interaction.editReply({ embeds: [errorEmbed("You have no active hangar timer. Use `/hangar set` to start one.")] });
+    }
+
+    const expiryEpoch = Math.floor(timer.expiresAt / 1000);
+    const expired     = Date.now() > timer.expiresAt;
+    const embed = new EmbedBuilder()
+      .setColor(expired ? 0xff4444 : 0x2ecc71)
+      .setTitle(expired ? "🏛️ Hangar Timer — EXPIRED" : "🏛️ Hangar Timer — Active")
+      .addFields(
+        { name: "Location", value: timer.location, inline: true },
+        { name: expired ? "Expired" : "Expires", value: `<t:${expiryEpoch}:f>`, inline: true },
+        { name: expired ? "Expired" : "Time Remaining", value: `<t:${expiryEpoch}:R>`, inline: false }
+      )
+      .setFooter({ text: expired ? "Hangar expired — use /hangar set to start a new timer" : "Use /hangar clear to remove" })
+      .setTimestamp();
+
+    return interaction.editReply({ embeds: [embed] });
+  }
+
+  if (sub === "clear") {
+    if (!hangarTimers[userId]) {
+      return interaction.editReply({ embeds: [errorEmbed("You have no active hangar timer to clear.")] });
+    }
+    delete hangarTimers[userId];
+    saveTimers(hangarTimers);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x95a5a6)
+      .setTitle("🏛️ Hangar Timer Cleared")
+      .setDescription(`Timer for **${interaction.user.displayName || interaction.user.username}** has been removed.`)
+      .setTimestamp();
+
+    return interaction.editReply({ embeds: [embed] });
+  }
+}
+
 /** /help – Command list */
 async function handleHelp(interaction) {
   const embed = new EmbedBuilder()
@@ -559,7 +646,10 @@ async function handleHelp(interaction) {
       { name: "/terminal `<name>`", value: "Terminal details and available services." },
       { name: "/gameversion", value: "Current Star Citizen LIVE / PTU patch." },
       { name: "/pirate `[system]`", value: "High-traffic routes most likely to have other players." },
-      { name: "/looproutes `<from>` `[scu]`", value: "Back-to-back routes with zero dead legs and high profit." }
+      { name: "/looproutes `<from>` `[scu]`", value: "Back-to-back routes with zero dead legs and high profit." },
+      { name: "/hangar set `[minutes]` `[location]`", value: "Start an executive hangar rental timer (default 30 min)." },
+      { name: "/hangar check", value: "Check your current hangar timer and time remaining." },
+      { name: "/hangar clear", value: "Clear your hangar timer." }
     )
     .setFooter({ text: "Data from uexcorp.space • community-driven", iconURL: "https://uexcorp.space/favicon.ico" });
 
