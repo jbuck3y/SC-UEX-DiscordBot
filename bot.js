@@ -441,8 +441,14 @@ async function handleGameVersion(interaction) {
   await interaction.editReply({ embeds: [embed] });
 }
 
-/** /pirate – High-traffic routes most likely to encounter other players */
+/** /pirate – Piracy tools (subcommands: traffic, sell) */
 async function handlePirate(interaction) {
+  const sub = interaction.options.getSubcommand();
+  if (sub === "sell") return handlePirateSell(interaction);
+  return handlePirateTraffic(interaction);
+}
+
+async function handlePirateTraffic(interaction) {
   const system = interaction.options.getString("system");
 
   // Top commodities by cax_score = highest real player trading volume
@@ -502,6 +508,53 @@ async function handlePirate(interaction) {
     .setDescription(desc)
     .addFields({ name: "Traffic Key", value: "🔴 High  🟡 Medium  🟢 Low — based on UEX community trading volume" })
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
+    .setTimestamp();
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+/** /pirate sell – NQA sell locations for stolen goods */
+async function handlePirateSell(interaction) {
+  const commodity = interaction.options.getString("commodity");
+
+  const results = await uex.getNQASellPrices(commodity);
+
+  if (!results || results.length === 0) {
+    return interaction.editReply({
+      embeds: [errorEmbed(
+        commodity
+          ? `No NQA sell prices found for **${commodity}**.\nTry a commodity name like *Agricium*, *Tungsten*, or *Widow*.`
+          : "No NQA sell data available."
+      )],
+    });
+  }
+
+  // If filtering by commodity, show top locations for that commodity
+  // Otherwise, show the single best sell price per terminal across all commodities
+  let display;
+  if (commodity) {
+    display = results.slice(0, 10);
+  } else {
+    // Best single commodity per terminal
+    const byTerminal = {};
+    for (const p of results) {
+      const id = p.id_terminal;
+      if (!byTerminal[id] || p.price_sell > byTerminal[id].price_sell) byTerminal[id] = p;
+    }
+    display = Object.values(byTerminal).sort((a, b) => b.price_sell - a.price_sell).slice(0, 10);
+  }
+
+  const desc = display.map((p, i) =>
+    `**${i + 1}.** ${p.terminal?.name || p.terminal_name} *(${p.terminal?.star_system_name || "?"})*\n` +
+    `${p.commodity_name} — Sell: **${uex.formatPrice(p.price_sell)} aUEC/SCU**`
+  ).join("\n\n");
+
+  const embed = new EmbedBuilder()
+    .setColor(0x8b0000)
+    .setTitle(`☠️ NQA Sell Locations${commodity ? ` — ${commodity}` : ""}`)
+    .setURL("https://uexcorp.space/commodities")
+    .setDescription(desc)
+    .setFooter({ text: "NQA = No Questions Asked • stolen goods accepted • UEX Corp", iconURL: "https://uexcorp.space/favicon.ico" })
     .setTimestamp();
 
   await interaction.editReply({ embeds: [embed] });
@@ -670,7 +723,8 @@ async function handleHelp(interaction) {
       { name: "/fuel `[location]`", value: "Hydrogen & Quantum fuel prices." },
       { name: "/terminal `<name>`", value: "Terminal details and available services." },
       { name: "/gameversion", value: "Current Star Citizen LIVE / PTU patch." },
-      { name: "/pirate `[system]`", value: "High-traffic routes most likely to have other players." },
+      { name: "/pirate traffic `[system]`", value: "High-traffic routes most likely to have other players." },
+      { name: "/pirate sell `[commodity]`", value: "NQA sell locations for stolen goods, sorted by highest price." },
       { name: "/looproutes `<from>` `[scu]`", value: "Back-to-back routes with zero dead legs and high profit." },
       { name: "/hangar set `[minutes]` `[location]`", value: "Start an executive hangar rental timer (default 30 min)." },
       { name: "/hangar check", value: "Check your current hangar timer and time remaining." },

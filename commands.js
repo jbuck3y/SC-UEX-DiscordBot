@@ -99,9 +99,20 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("pirate")
-    .setDescription("Show high-traffic trade routes where you're most likely to encounter other players")
-    .addStringOption((o) =>
-      o.setName("system").setDescription("Filter by star system (e.g. Stanton, Pyro)").setRequired(false)
+    .setDescription("Piracy tools for Star Citizen")
+    .addSubcommand((sub) =>
+      sub.setName("traffic")
+        .setDescription("High-traffic trade routes where you're most likely to encounter other players")
+        .addStringOption((o) =>
+          o.setName("system").setDescription("Filter by star system (e.g. Stanton, Pyro)").setRequired(false)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub.setName("sell")
+        .setDescription("NQA (No Questions Asked) sell locations for stolen goods")
+        .addStringOption((o) =>
+          o.setName("commodity").setDescription("Filter by commodity for the highest sell price location").setRequired(false)
+        )
     ),
 
   new SlashCommandBuilder()

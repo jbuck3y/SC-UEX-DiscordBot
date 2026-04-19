@@ -187,6 +187,30 @@ async function getTerminals(name) {
   return data;
 }
 
+/** Get all NQA terminals and their sell prices, optionally filtered by commodity name */
+async function getNQASellPrices(commodity) {
+  const allTerminals = await get("/terminals", { is_nqa: 1 });
+  const nqa = Array.isArray(allTerminals) ? allTerminals.filter(t => t.is_nqa === 1) : [];
+  const nqaById = Object.fromEntries(nqa.map(t => [t.id, t]));
+  const nqaIds  = new Set(nqa.map(t => t.id));
+
+  const prices = await getCommodityPricesAll();
+  let sell = prices.filter(p => nqaIds.has(p.id_terminal) && p.price_sell > 0);
+
+  if (commodity) {
+    const q = commodity.toLowerCase();
+    sell = sell.filter(p =>
+      p.commodity_name?.toLowerCase().includes(q) ||
+      p.commodity_code?.toLowerCase().includes(q)
+    );
+  }
+
+  // Attach terminal info and sort by sell price descending
+  return sell
+    .map(p => ({ ...p, terminal: nqaById[p.id_terminal] }))
+    .sort((a, b) => b.price_sell - a.price_sell);
+}
+
 // ─── Game Versions ────────────────────────────────────────────────────────────
 
 async function getGameVersions() {
@@ -231,6 +255,7 @@ function formatPrice(n) {
 }
 
 module.exports = {
+  getNQASellPrices,
   get,
   getCommodities,
   getCommodityPricesAll,
