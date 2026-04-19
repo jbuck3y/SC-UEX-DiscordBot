@@ -170,16 +170,15 @@ async function handleRoute(interaction) {
   const to = interaction.options.getString("to");
   const scu = interaction.options.getInteger("scu") || 100;
 
-  // Pick best terminal — exclude Admin terminals, prefer commodity type
+  // Pick best terminal — prefer Admin commodity terminals (they are the main trade hubs in UEX)
   const pickBest = (list) => {
     if (!list || list.length === 0) return null;
-    const nonAdmin = list.filter(t => !t.name.startsWith("Admin -"));
-    const pool = nonAdmin.length > 0 ? nonAdmin : list; // fall back to all if only admins exist
     return (
-      pool.find(t => t.type === "commodity" && t.is_available === 1) ||
-      pool.find(t => t.type === "commodity") ||
-      pool.find(t => t.is_available === 1) ||
-      pool[0]
+      list.find(t => t.name.startsWith("Admin -") && t.type === "commodity" && t.is_available === 1) ||
+      list.find(t => t.name.startsWith("Admin -") && t.type === "commodity") ||
+      list.find(t => t.type === "commodity" && t.is_available === 1) ||
+      list.find(t => t.type === "commodity") ||
+      list[0]
     );
   };
 
@@ -207,8 +206,7 @@ async function handleRoute(interaction) {
 
   if (to) {
     const destTerminals = await uex.getTerminals(to);
-    const nonAdminDest = destTerminals?.filter(t => !t.name.startsWith("Admin -")) || [];
-    const destCommodity = nonAdminDest.filter(t => t.type === "commodity");
+    const destCommodity = (destTerminals || []).filter(t => t.type === "commodity");
     console.log(`[ROUTE] "${to}" → ${destTerminals?.length ?? 0} results, ${destCommodity.length} non-admin commodity`);
 
     if (destCommodity.length === 1) {
@@ -473,11 +471,12 @@ async function handleLoopRoutes(interaction) {
 
   // Resolve origin terminal (same logic as /route)
   const originTerminals = await uex.getTerminals(from);
-  const nonAdmin = originTerminals?.filter(t => !t.name.startsWith("Admin -")) || [];
   const origin =
-    nonAdmin.find(t => t.type === "commodity" && t.is_available === 1) ||
-    nonAdmin.find(t => t.type === "commodity") ||
-    nonAdmin[0] || originTerminals?.[0];
+    originTerminals?.find(t => t.name.startsWith("Admin -") && t.type === "commodity" && t.is_available === 1) ||
+    originTerminals?.find(t => t.name.startsWith("Admin -") && t.type === "commodity") ||
+    originTerminals?.find(t => t.type === "commodity" && t.is_available === 1) ||
+    originTerminals?.find(t => t.type === "commodity") ||
+    originTerminals?.[0];
 
   if (!origin) {
     return interaction.editReply({
