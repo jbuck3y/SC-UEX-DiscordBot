@@ -11,16 +11,39 @@
  */
 
 require("dotenv").config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType, REST, Routes } = require("discord.js");
 const uex = require("./uex-api");
+const commands = require("./commands");
+
+// ─── Auto-deploy slash commands ───────────────────────────────────────────────
+
+async function deployCommands() {
+  const { DISCORD_TOKEN, CLIENT_ID, GUILD_ID } = process.env;
+  if (!DISCORD_TOKEN || !CLIENT_ID) {
+    console.warn("⚠️  Skipping command deploy — DISCORD_TOKEN or CLIENT_ID missing.");
+    return;
+  }
+  try {
+    const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
+    const route = GUILD_ID
+      ? Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
+      : Routes.applicationCommands(CLIENT_ID);
+    await rest.put(route, { body: commands });
+    const scope = GUILD_ID ? `guild ${GUILD_ID}` : "global";
+    console.log(`📡  Slash commands registered (${scope})`);
+  } catch (err) {
+    console.error("❌  Failed to register commands:", err.message);
+  }
+}
 
 // ─── Client Setup ────────────────────────────────────────────────────────────
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`✅  Logged in as ${client.user.tag}`);
   client.user.setActivity("Star Citizen | /help", { type: ActivityType.Playing });
+  await deployCommands();
 });
 
 // ─── Interaction Handler ──────────────────────────────────────────────────────
