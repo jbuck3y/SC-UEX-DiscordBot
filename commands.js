@@ -76,6 +76,23 @@ const commands = [
     .setDescription("Show the current Star Citizen LIVE and PTU patch versions"),
 
   new SlashCommandBuilder().setName("help").setDescription("List all UEX bot commands"),
+
+  new SlashCommandBuilder()
+    .setName("pirate")
+    .setDescription("Show high-traffic trade routes where you're most likely to encounter other players")
+    .addStringOption((o) =>
+      o.setName("system").setDescription("Filter by star system (e.g. Stanton, Pyro)").setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("looproutes")
+    .setDescription("Find back-to-back trade routes with no dead legs and high total profit")
+    .addStringOption((o) =>
+      o.setName("from").setDescription("Origin station or terminal (e.g. Baijini Point, Port Tressler)").setRequired(true)
+    )
+    .addIntegerOption((o) =>
+      o.setName("scu").setDescription("Cargo capacity in SCU (default: 100)").setRequired(false).setMinValue(1).setMaxValue(99999)
+    ),
 ];
 
 module.exports = commands.map((c) => c.toJSON());

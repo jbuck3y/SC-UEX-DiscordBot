@@ -113,8 +113,8 @@ async function getRoutes(opts = {}) {
   if (opts.id_commodity)            params.id_commodity            = parseInt(opts.id_commodity);
   if (opts.investment)              params.investment              = parseInt(opts.investment);
 
-  const hasRequired = params.id_terminal_origin || params.id_orbit_origin ||
-                      params.id_terminal_destination || params.id_commodity;
+  // The API requires id_terminal_origin, id_orbit_origin, or id_commodity — id_terminal_destination alone is not accepted
+  const hasRequired = params.id_terminal_origin || params.id_orbit_origin || params.id_commodity;
   if (!hasRequired) {
     throw new Error("getRoutes requires at least one of: id_terminal_origin, id_terminal_destination, id_commodity");
   }
