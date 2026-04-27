@@ -239,6 +239,14 @@ async function handleRoute(interaction) {
       )],
     });
   }
+  if (originTerminal.type !== "commodity") {
+    return interaction.editReply({
+      embeds: [errorEmbed(
+        `No commodity trade terminal found at **${from}**.\n` +
+        `Only commodity terminals support trade routes. Try a station like *Baijini Point* or *Port Tressler*.`
+      )],
+    });
+  }
   console.log(`[ROUTE] Using origin: id=${originTerminal.id} "${originTerminal.name}" type=${originTerminal.type}`);
 
   // Step 2: Resolve destination (optional)
@@ -285,22 +293,27 @@ async function handleRoute(interaction) {
   }
 
   const r = routes[0];
-  const profit = r.profit ? `${uex.formatPrice(Math.round(r.profit))} aUEC` : "—";
-  const investment = r.investment ? `${uex.formatPrice(Math.round(r.investment))} aUEC` : "—";
+  // Scale profit and investment to the user's actual SCU — the API's own profit/investment
+  // fields reflect terminal capacity (not the player's ship), so compute from per-SCU prices.
+  const profitPerScu = (r.price_destination || 0) - (r.price_origin || 0);
+  const totalProfit = profitPerScu * scu;
+  const totalInvestment = (r.price_origin || 0) * scu;
+  const profit = profitPerScu > 0 ? `${uex.formatPrice(Math.round(totalProfit))} aUEC` : "—";
+  const investment = totalInvestment > 0 ? `${uex.formatPrice(Math.round(totalInvestment))} aUEC` : "—";
 
   const embed = new EmbedBuilder()
     .setColor(0x2ecc71)
-    .setTitle(`🚀 Best Route from ${originTerminal.name}`)
+    .setTitle(`🚀 Best Route from ${cleanTerminal(originTerminal.name)}`)
     .setURL(`https://uexcorp.space/trade/route?code=${r.code || ""}`)
     .addFields(
       { name: "Commodity", value: r.commodity_name || "—", inline: true },
-      { name: "Buy At", value: r.origin_terminal_name || originTerminal.name, inline: true },
-      { name: "Sell At", value: r.destination_terminal_name || "—", inline: true },
+      { name: "Buy At", value: cleanTerminal(r.origin_terminal_name || originTerminal.name), inline: true },
+      { name: "Sell At", value: cleanTerminal(r.destination_terminal_name || "—"), inline: true },
       { name: "Buy Price/SCU", value: r.price_origin ? `${uex.formatPrice(r.price_origin)} aUEC` : "—", inline: true },
       { name: "Sell Price/SCU", value: r.price_destination ? `${uex.formatPrice(r.price_destination)} aUEC` : "—", inline: true },
-      { name: "Margin", value: r.price_margin ? `${r.price_margin}%` : "—", inline: true },
-      { name: "Max Profit", value: profit, inline: true },
-      { name: "Investment", value: investment, inline: true },
+      { name: "Margin", value: r.price_margin != null ? `${parseFloat(r.price_margin).toFixed(1)}%` : "—", inline: true },
+      { name: `Profit (${scu} SCU)`, value: profit, inline: true },
+      { name: `Investment (${scu} SCU)`, value: investment, inline: true },
       { name: "UEX Score", value: r.score ? String(r.score) : "—", inline: true }
     )
     .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
@@ -309,9 +322,10 @@ async function handleRoute(interaction) {
   if (routes.length > 1) {
     const alts = routes
       .slice(1, 4)
-      .map((alt, i) =>
-        `**${i + 2}.** ${alt.commodity_name} → ${alt.destination_terminal_name || "?"} — **${uex.formatPrice(Math.round(alt.profit || 0))} aUEC**`
-      )
+      .map((alt, i) => {
+        const altProfit = ((alt.price_destination || 0) - (alt.price_origin || 0)) * scu;
+        return `**${i + 2}.** ${alt.commodity_name} → ${cleanTerminal(alt.destination_terminal_name || "?")} — **${uex.formatPrice(Math.round(altProfit))} aUEC**`;
+      })
       .join("\n");
     embed.addFields({ name: "Other Top Routes", value: alts });
   }
