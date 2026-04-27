@@ -246,6 +246,54 @@ async function getItems(name) {
   return data.filter((i) => i.name?.toLowerCase().includes(q));
 }
 
+/** Get item shop prices across all terminals, filtered by item name */
+async function getItemPricesAll(name) {
+  const data = await get("/items_prices_all");
+  if (!Array.isArray(data)) return [];
+  if (!name) return data;
+  const q = name.toLowerCase();
+  return data.filter(p => p.item_name?.toLowerCase().includes(q));
+}
+
+/** Get player marketplace listings with optional search and operation filter */
+async function getMarketplaceListings(opts = {}) {
+  const data = await get("/marketplace_listings");
+  if (!Array.isArray(data)) return [];
+  let results = data;
+  if (opts.search) {
+    const q = opts.search.toLowerCase();
+    results = results.filter(l =>
+      l.title?.toLowerCase().includes(q) ||
+      l.description?.toLowerCase().includes(q)
+    );
+  }
+  if (opts.operation) {
+    results = results.filter(l => l.operation === opts.operation);
+  }
+  return results;
+}
+
+/** Get refinery yield modifiers, filtered by ore name and/or location */
+async function getRefineryYields(opts = {}) {
+  const data = await get("/refineries_yields");
+  if (!Array.isArray(data)) return [];
+  let results = data;
+  if (opts.ore) {
+    const q = opts.ore.toLowerCase();
+    results = results.filter(r => r.commodity_name?.toLowerCase().includes(q));
+  }
+  if (opts.location) {
+    const q = opts.location.toLowerCase();
+    results = results.filter(r =>
+      r.terminal_name?.toLowerCase().includes(q) ||
+      r.star_system_name?.toLowerCase().includes(q) ||
+      r.orbit_name?.toLowerCase().includes(q) ||
+      r.space_station_name?.toLowerCase().includes(q)
+    );
+  }
+  return results.sort((a, b) => (b.value || 0) - (a.value || 0));
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 /** Format a price number with thousands separators */
@@ -272,5 +320,8 @@ module.exports = {
   getPlanets,
   getSpaceStations,
   getItems,
+  getItemPricesAll,
+  getMarketplaceListings,
+  getRefineryYields,
   formatPrice,
 };

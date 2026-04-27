@@ -128,6 +128,18 @@ client.on("interactionCreate", async (interaction) => {
       case "hangar":
         await handleHangar(interaction);
         break;
+      case "items_prices_all":
+        await handleItemsPricesAll(interaction);
+        break;
+      case "commodities_ranking":
+        await handleCommoditiesRanking(interaction);
+        break;
+      case "marketplace_listings":
+        await handleMarketplaceListings(interaction);
+        break;
+      case "refineries_yields":
+        await handleRefineriesYields(interaction);
+        break;
       default:
         await interaction.editReply("❓ Unknown command.");
     }
@@ -742,9 +754,195 @@ async function handleHelp(interaction) {
       { name: "/looproutes `<from>` `[scu]`", value: "Back-to-back routes with zero dead legs and high profit." },
       { name: "/hangar set `[minutes]` `[location]`", value: "Start an executive hangar rental timer (default 30 min)." },
       { name: "/hangar check", value: "Check your current hangar timer and time remaining." },
-      { name: "/hangar clear", value: "Clear your hangar timer." }
+      { name: "/hangar clear", value: "Clear your hangar timer." },
+      { name: "/items_prices_all `<item>`", value: "Item shop buy/sell prices across all terminals." },
+      { name: "/commodities_ranking `[filter]`", value: "Top traded commodities by community activity and profitability." },
+      { name: "/marketplace_listings `[search]` `[type]`", value: "Player marketplace WTS/WTB listings." },
+      { name: "/refineries_yields `[ore]` `[location]`", value: "Refinery yield modifiers — find the best yield for your ore." }
     )
     .setFooter({ text: "Data from uexcorp.space • community-driven", iconURL: "https://uexcorp.space/favicon.ico" });
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+/** /items_prices_all <item> – Item shop buy prices across all terminals */
+async function handleItemsPricesAll(interaction) {
+  const name = interaction.options.getString("item");
+  const prices = await uex.getItemPricesAll(name);
+
+  if (!prices || prices.length === 0) {
+    return interaction.editReply({ embeds: [errorEmbed(`No item prices found matching **${name}**.\nTry a partial name like *Omnisky*, *P4AR*, or *Ballistic*.`)] });
+  }
+
+  const itemName = prices[0].item_name;
+  const buyers   = prices.filter(p => p.price_buy  > 0).sort((a, b) => a.price_buy  - b.price_buy).slice(0, 8);
+  const sellers  = prices.filter(p => p.price_sell > 0).sort((a, b) => b.price_sell - a.price_sell).slice(0, 5);
+
+  const embed = new EmbedBuilder()
+    .setColor(0x9b59b6)
+    .setTitle(`🔫 Item Prices: ${itemName}`)
+    .setURL(`https://uexcorp.space/items`)
+    .setFooter({ text: "UEX Corp • uexcorp.space", iconURL: "https://uexcorp.space/favicon.ico" })
+    .setTimestamp();
+
+  if (buyers.length > 0) {
+    embed.addFields({
+      name: "🟢 Buy (cheapest first)",
+      value: buyers.map((p, i) =>
+        `**${i + 1}.** ${p.terminal_name} — **${uex.formatPrice(p.price_buy)} UEC**`
+      ).join("\n"),
+    });
+  }
+  if (sellers.length > 0) {
+    embed.addFields({
+      name: "🔴 Sell (highest first)",
+      value: sellers.map((p, i) =>
+        `**${i + 1}.** ${p.terminal_name} — **${uex.formatPrice(p.price_sell)} UEC**`
+      ).join("\n"),
+    });
+  }
+  if (buyers.length === 0 && sellers.length === 0) {
+    embed.setDescription("No buy or sell prices found for this item.");
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+/** /commodities_ranking [filter] – Most traded commodities by community activity */
+async function handleCommoditiesRanking(interaction) {
+  const filter = interaction.options.getString("filter");
+  let data = await uex.getCommodityRanking();
+
+  if (!data || data.length === 0) {
+    return interaction.editReply({ embeds: [errorEmbed("Could not fetch commodity rankings.") ]});
+  }
+
+  if (filter) {
+    const q = filter.toLowerCase();
+    data = data.filter(c => c.name?.toLowerCase().includes(q) || c.code?.toLowerCase().includes(q));
+    if (data.length === 0) {
+      return interaction.editReply({ embeds: [errorEmbed(`No ranked commodities found matching **${filter}**.`)] });
+    }
+  }
+
+  // Sort by cax_score descending (most community trading activity first)
+  data = data.slice().sort((a, b) => (b.cax_score || 0) - (a.cax_score || 0));
+  const top = data.slice(0, 10);
+
+  const desc = top.map((c, i) => {
+    const profitPerScu = parseInt(c.profitability_per_scu_best) || 0;
+    const margin = parseFloat(c.profitability_relative_percentage_best || 0).toFixed(1);
+    const illegal = c.is_illegal ? " ☠️" : "";
+    return (
+      `**${i + 1}. ${c.name}${illegal}** \`${c.code}\`\n` +
+      `Buy avg: **${uex.formatPrice(parseInt(c.price_buy_avg))} aUEC** · Sell avg: **${uex.formatPrice(parseInt(c.price_sell_avg))} aUEC**\n` +
+      `Best profit/SCU: **${uex.formatPrice(profitPerScu)} aUEC** (${margin}% margin) · CAX: ${uex.formatPrice(c.cax_score)}`
+    );
+  }).join("\n\n");
+
+  const embed = new EmbedBuilder()
+    .setColor(0xf5a623)
+    .setTitle(`📊 Commodity Rankings${filter ? ` — ${filter}` : " (Top 10 by Activity)"}`)
+    .setURL("https://uexcorp.space/commodities")
+    .setDescription(desc)
+    .setFooter({ text: "CAX = community trading activity score • UEX Corp", iconURL: "https://uexcorp.space/favicon.ico" })
+    .setTimestamp();
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+/** /marketplace_listings [search] [type] – Player marketplace */
+async function handleMarketplaceListings(interaction) {
+  const search    = interaction.options.getString("search");
+  const operation = interaction.options.getString("type");
+
+  const listings = await uex.getMarketplaceListings({ search, operation });
+
+  if (!listings || listings.length === 0) {
+    return interaction.editReply({
+      embeds: [errorEmbed(
+        `No marketplace listings found${search ? ` matching **${search}**` : ""}.\n` +
+        `Try a broader search or browse at uexcorp.space/marketplace`
+      )],
+    });
+  }
+
+  // Sort newest first; show top 8
+  const top = listings
+    .slice()
+    .sort((a, b) => (b.date_added || 0) - (a.date_added || 0))
+    .slice(0, 8);
+
+  const desc = top.map((l, i) => {
+    const priceVal = parseInt(l.price) || 0;
+    const price    = priceVal > 0 ? `**${uex.formatPrice(priceVal)} ${l.currency || "UEC"}**` : "*Negotiable*";
+    const opIcon   = l.operation === "buy" ? "🔵 WTB" : l.operation === "sell" ? "🟡 WTS" : "🔄 WTT";
+    const stock    = l.in_stock > 0 ? `x${l.in_stock}` : (l.is_sold_out ? "SOLD OUT" : "");
+    const source   = l.source && l.source !== "none" ? ` · *${l.source}*` : "";
+    const location = l.location ? `📍 ${l.location}` : "";
+    return (
+      `**${i + 1}. ${opIcon} ${l.title}**\n` +
+      `${price}${stock ? ` (${stock})` : ""}${source}\n` +
+      `${location}${location && l.user_name ? " · " : ""}${l.user_name ? `@${l.user_name}` : ""}`
+    );
+  }).join("\n\n");
+
+  const typeLabel = operation === "sell" ? "WTS" : operation === "buy" ? "WTB" : "All";
+  const embed = new EmbedBuilder()
+    .setColor(0xe67e22)
+    .setTitle(`🏪 Marketplace${search ? `: ${search}` : ` Listings`} (${typeLabel})`)
+    .setURL("https://uexcorp.space/marketplace")
+    .setDescription(desc)
+    .setFooter({ text: `Showing ${top.length} of ${listings.length} listing(s) • UEX Corp`, iconURL: "https://uexcorp.space/favicon.ico" })
+    .setTimestamp();
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+/** /refineries_yields [ore] [location] – Refinery yield modifiers */
+async function handleRefineriesYields(interaction) {
+  const ore      = interaction.options.getString("ore");
+  const location = interaction.options.getString("location");
+
+  const yields = await uex.getRefineryYields({ ore, location });
+
+  if (!yields || yields.length === 0) {
+    return interaction.editReply({
+      embeds: [errorEmbed(
+        `No refinery data found${ore ? ` for **${ore}**` : ""}${location ? ` at **${location}**` : ""}.\n` +
+        `Try an ore like *Iron*, *Bexalite*, or a system like *Stanton*.`
+      )],
+    });
+  }
+
+  const top = yields.slice(0, 10);
+
+  const desc = top.map((r, i) => {
+    const modifier  = r.value > 0 ? `+${r.value}%` : `${r.value}%`;
+    const wkLabel   = r.value_week  != null ? ` · 7d: ${r.value_week > 0 ? "+" : ""}${r.value_week}%`   : "";
+    const moLabel   = r.value_month != null ? ` · 30d: ${r.value_month > 0 ? "+" : ""}${r.value_month}%` : "";
+    const terminal  = r.terminal_name?.replace(/^Refinement (?:Center|Processing) - /, "") || "?";
+    const system    = r.star_system_name || "?";
+    const location  = terminal.toLowerCase().includes(system.toLowerCase()) ? terminal : `${terminal} (${system})`;
+    return (
+      `**${i + 1}. ${modifier}** — ${r.commodity_name}\n` +
+      `${location}${wkLabel}${moLabel}`
+    );
+  }).join("\n\n");
+
+  const title = ore && location
+    ? `⚗️ Yields: ${ore} @ ${location}`
+    : ore ? `⚗️ Refinery Yields — ${ore}`
+    : location ? `⚗️ Refinery Yields @ ${location}`
+    : "⚗️ Best Refinery Yields (Top 10)";
+
+  const embed = new EmbedBuilder()
+    .setColor(0x1abc9c)
+    .setTitle(title)
+    .setURL("https://uexcorp.space/mining")
+    .setDescription(desc)
+    .setFooter({ text: `${yields.length} record(s) • positive % = yield bonus • UEX Corp`, iconURL: "https://uexcorp.space/favicon.ico" })
+    .setTimestamp();
 
   await interaction.editReply({ embeds: [embed] });
 }

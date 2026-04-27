@@ -124,6 +124,46 @@ const commands = [
     .addIntegerOption((o) =>
       o.setName("scu").setDescription("Cargo capacity in SCU (default: 100)").setRequired(false).setMinValue(1).setMaxValue(99999)
     ),
+
+  new SlashCommandBuilder()
+    .setName("items_prices_all")
+    .setDescription("Item shop buy prices for a specific item across all terminals")
+    .addStringOption((o) =>
+      o.setName("item").setDescription("Item name (e.g. Omnisky, P4AR, Ballistic Cannon)").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("commodities_ranking")
+    .setDescription("Most traded commodities ranked by community activity and profitability")
+    .addStringOption((o) =>
+      o.setName("filter").setDescription("Filter by commodity name (e.g. Gold, Waste, Helium)").setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("marketplace_listings")
+    .setDescription("Browse player marketplace listings for items and ships")
+    .addStringOption((o) =>
+      o.setName("search").setDescription("Search by item name (e.g. P4AR, Gladius, Shield)").setRequired(false)
+    )
+    .addStringOption((o) =>
+      o.setName("type")
+        .setDescription("Filter by listing type (default: all)")
+        .setRequired(false)
+        .addChoices(
+          { name: "Sell (items for sale)", value: "sell" },
+          { name: "Buy (player wanted)", value: "buy" }
+        )
+    ),
+
+  new SlashCommandBuilder()
+    .setName("refineries_yields")
+    .setDescription("Refinery yield modifiers by ore and location (higher % = better output)")
+    .addStringOption((o) =>
+      o.setName("ore").setDescription("Filter by ore name (e.g. Iron, Bexalite, Agricium)").setRequired(false)
+    )
+    .addStringOption((o) =>
+      o.setName("location").setDescription("Filter by system or station (e.g. Stanton, Pyro, Baijini)").setRequired(false)
+    ),
 ];
 
 module.exports = commands.map((c) => c.toJSON());
