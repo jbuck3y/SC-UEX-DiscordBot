@@ -219,13 +219,18 @@ async function handlePrice(interaction) {
   await interaction.editReply({ embeds: [embed] });
 }
 
-/** /route <from> <to> – Best trade route between two locations */
-async function handleRoute(interaction) {
-  const from = interaction.options.getString("from");
-  const to = interaction.options.getString("to");
-  const scu = interaction.options.getInteger("scu") || 100;
+// ─── Terminal resolution helpers ──────────────────────────────────────────────
 
-  // Pick best terminal — prefer Admin commodity terminals (they are the main trade hubs in UEX)
+/** Strip common station-name suffixes so "Seraphim Station" → "Seraphim" */
+function stripStationSuffix(name) {
+  return name.replace(/\b(station|point|base|hub|outpost|depot)\b/gi, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Resolve the best commodity terminal for a user-supplied location string.
+ * Falls back to a suffix-stripped retry so "Seraphim Station" finds "Admin - Seraphim".
+ */
+async function resolveCommodityTerminal(name, tag = "TERM") {
   const pickBest = (list) => {
     if (!list || list.length === 0) return null;
     return (
@@ -237,12 +242,36 @@ async function handleRoute(interaction) {
     );
   };
 
-  // Step 1: Resolve origin
-  const originTerminals = await uex.getTerminals(from);
-  console.log(`[ROUTE] "${from}" → ${originTerminals?.length ?? 0} results`);
-  originTerminals?.forEach(t => console.log(`  id=${t.id} name="${t.name}" type="${t.type}" available=${t.is_available}`));
+  let terminals = await uex.getTerminals(name);
+  console.log(`[${tag}] "${name}" → ${terminals?.length ?? 0} results`);
+  terminals?.forEach(t => console.log(`  id=${t.id} name="${t.name}" type="${t.type}" available=${t.is_available}`));
 
-  const originTerminal = pickBest(originTerminals);
+  let best = pickBest(terminals);
+
+  // If no commodity terminal found, retry with suffix stripped ("Seraphim Station" → "Seraphim")
+  if ((!best || best.type !== "commodity")) {
+    const simplified = stripStationSuffix(name);
+    if (simplified && simplified.toLowerCase() !== name.toLowerCase()) {
+      const retryTerminals = await uex.getTerminals(simplified);
+      console.log(`[${tag}] retry "${simplified}" → ${retryTerminals?.length ?? 0} results`);
+      const retryBest = pickBest(retryTerminals);
+      if (retryBest && retryBest.type === "commodity") {
+        best = retryBest;
+      }
+    }
+  }
+
+  return best;
+}
+
+/** /route <from> <to> – Best trade route between two locations */
+async function handleRoute(interaction) {
+  const from = interaction.options.getString("from");
+  const to = interaction.options.getString("to");
+  const scu = interaction.options.getInteger("scu") || 100;
+
+  // Step 1: Resolve origin
+  const originTerminal = await resolveCommodityTerminal(from, "ROUTE");
   if (!originTerminal) {
     return interaction.editReply({
       embeds: [errorEmbed(
@@ -268,18 +297,25 @@ async function handleRoute(interaction) {
   let filter_dest_system = null;
 
   if (to) {
+    const toKey = stripStationSuffix(to);
     const destTerminals = await uex.getTerminals(to);
-    const destCommodity = (destTerminals || []).filter(t => t.type === "commodity");
-    console.log(`[ROUTE] "${to}" → ${destTerminals?.length ?? 0} results, ${destCommodity.length} non-admin commodity`);
+    let destCommodity = (destTerminals || []).filter(t => t.type === "commodity");
+    console.log(`[ROUTE] "${to}" → ${destTerminals?.length ?? 0} results, ${destCommodity.length} commodity`);
+
+    // If no commodity terminal found, retry with suffix stripped ("Seraphim Station" → "Seraphim")
+    if (destCommodity.length === 0 && toKey.toLowerCase() !== to.toLowerCase()) {
+      const retryTerminals = await uex.getTerminals(toKey);
+      destCommodity = (retryTerminals || []).filter(t => t.type === "commodity");
+      console.log(`[ROUTE] retry dest "${toKey}" → ${destCommodity.length} commodity`);
+    }
 
     if (destCommodity.length === 1) {
-      // Exact single match — use terminal ID
       destTerminal = destCommodity[0];
       console.log(`[ROUTE] Using dest terminal: id=${destTerminal.id} "${destTerminal.name}"`);
     } else {
-      // Multiple or zero matches — treat as system/orbit/location name and filter client-side
-      filter_dest_system = to;
-      console.log(`[ROUTE] Using client-side dest filter: "${to}"`);
+      // Multiple or zero matches — filter client-side using simplified name
+      filter_dest_system = toKey;
+      console.log(`[ROUTE] Using client-side dest filter: "${toKey}"`);
     }
   }
 
@@ -591,14 +627,8 @@ async function handleLoopRoutes(interaction) {
   const from = interaction.options.getString("from");
   const scu  = interaction.options.getInteger("scu") || 100;
 
-  // Resolve origin terminal (same logic as /route)
-  const originTerminals = await uex.getTerminals(from);
-  const origin =
-    originTerminals?.find(t => t.name.startsWith("Admin -") && t.type === "commodity" && t.is_available === 1) ||
-    originTerminals?.find(t => t.name.startsWith("Admin -") && t.type === "commodity") ||
-    originTerminals?.find(t => t.type === "commodity" && t.is_available === 1) ||
-    originTerminals?.find(t => t.type === "commodity") ||
-    originTerminals?.[0];
+  // Resolve origin terminal (with suffix-stripped fallback for "Seraphim Station" → "Seraphim")
+  const origin = await resolveCommodityTerminal(from, "LOOP");
 
   if (!origin) {
     return interaction.editReply({
